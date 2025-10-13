@@ -1,0 +1,5 @@
+# Bağımlılıklar (bu klasör çok büyüktür ve gereksizdir)
+node_modules
+
+# Ortam değişkenlerini içeren gizli dosyalar
+.env
