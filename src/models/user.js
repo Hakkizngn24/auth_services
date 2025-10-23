@@ -33,7 +33,7 @@ const User = sequelize.define('User', {
         allowNull: false
     },
     rePassword: {
-        type: DataTypes.VIRTUAL, // DB’ye kaydetmeyecek, sadece doğrulama için
+        type: DataTypes.VIRTUAL,
         allowNull: true
     },
     kimlikNo: {
@@ -42,7 +42,7 @@ const User = sequelize.define('User', {
         unique: true
     },
     cv: {
-        type: DataTypes.STRING, // dosya yolu veya URL
+        type: DataTypes.STRING,
         allowNull: true
     },
     biography: {
@@ -51,30 +51,18 @@ const User = sequelize.define('User', {
     },
     phoneNumber: {
         type: DataTypes.STRING,
-        allowNull: true
+        allowNull: true,
+        unique: true
     },
     profilePhoto: {
-        type: DataTypes.STRING, // dosya yolu veya URL
+        type: DataTypes.STRING,
         allowNull: true
     },
     userType: {
-        type: DataTypes.ENUM('student', 'teacher', 'admin'),
+        type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: 'student'
+        defaultValue: 'user'
     },
-    createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW
-    },
-    updatedAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW
-    }
-}, {
-    tableName: 'users',
-    timestamps: true,
     resetPasswordToken: {
         type: DataTypes.STRING,
         allowNull: true
@@ -83,11 +71,18 @@ const User = sequelize.define('User', {
         type: DataTypes.DATE,
         allowNull: true
     },
-    email: {
+    isVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    emailVerificationToken: {
         type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
+        allowNull: true
     }
+}, {
+
+    tableName: 'users',
+    timestamps: true
 });
 
 export default User;

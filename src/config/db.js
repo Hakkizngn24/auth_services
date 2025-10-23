@@ -1,22 +1,31 @@
-import {Sequelize} from 'sequelize';
-import env from './env.js';
+import { Sequelize } from 'sequelize';
+import dotenv from 'dotenv';
 
-const sequelize = new Sequelize (
-    env.db.name,
-    env.db.user,
-    env.db.pass,
+dotenv.config();
+
+let sequelize;
+
+sequelize = new Sequelize(
+    process.env.DB_NAME,
+    process.env.DB_USER,
+    process.env.DB_PASS,
     {
-        port: 3307,
-        host:env.db.host,
-        dialect:'mysql',
-        logging: false
+        host: process.env.DB_HOST || 'localhost', // 'host' bir adres olmalı
+        port: process.env.DB_PORT || 3307, // 'port' bir numara olmalı
+        dialect: 'mysql',
+        logging: false,
     }
 );
-try {
-    await sequelize.authenticate();
-    console.log('✅ Veritabanına başarıyla bağlanıldı');
-} catch (error) {
-    console.error('❌ Veritabanı bağlantı hatası:', error);
-}
+
+const connectDB = async () => {
+    try {
+        await sequelize.authenticate();
+        console.log('Database connection has been established successfully.');
+        await sequelize.sync(); // 'force: true' kaldırıldı
+    } catch (error) {
+        console.error('Unable to connect to the database:', error);
+    }
+};
 
 export default sequelize;
+export { connectDB };

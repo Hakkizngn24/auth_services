@@ -9,73 +9,104 @@ import nodemailer from 'nodemailer';
 
 dotenv.config();
 
-
-export const registerUser = async (req,res) => {
+export const registerUser = async (req, res) => {
     try {
-        const { username, name, surname, email, password, rePassword, kimlikNo, cv, biography, phoneNumber, profilePhoto, userType } = req.body;
+        console.log("--- 1. Register isteği başladı ---");
+        const { username, name, surname, email, password, rePassword, kimlikNo, biography, phoneNumber, userType } = req.body;
 
         if (password !== rePassword) {
-            return res.status(400).json({message:'Password do not match !!'});
+            console.log("HATA: Şifreler eşleşmedi.");
+            return res.status(400).json({ message: 'Password do not match !!' });
         }
+        console.log("--- 2. Şifreler eşleşti ---");
 
+        console.log("--- 3. Kullanıcı aranıyor (await User.findOne)... ---");
         const checkUser = await User.findOne({
             where: {
-                [Op.or]: [{email}, {username}, {phoneNumber}, {kimlikNo}]
+                [Op.or]: [{ email }, { username }, { phoneNumber }, { kimlikNo }]
             }
         });
+        console.log("--- 4. Kullanıcı arandı ---");
 
         if (checkUser) {
-            return res.status(400).json({message:'User with email, username, phone number, or kimlikNo already exists'});
+            console.log("HATA: Kullanıcı zaten mevcut.");
+            return res.status(400).json({ message: 'User with email, username, phone number, or kimlikNo already exists' });
         }
+        console.log("--- 5. Kullanıcı yeni, devam ediliyor ---");
 
+        console.log("--- 6. Şifre hash'leniyor... ---");
         const hashedPassword = await bcrypt.hash(password, 10);
+        console.log("--- 7. Şifre hash'lendi ---");
 
         const cvFile = req.files?.cv?.[0];
         const profileFile = req.files?.profilePhoto?.[0];
-
         const cvPath = cvFile ? cvFile.path : null;
         const profilePath = profileFile ? profileFile.path : null;
+        console.log("--- 8. Dosya yolları alındı ---");
 
+        console.log("--- 9. Yeni kullanıcı oluşturuluyor... ---");
         const newUser = await User.create({
-            username,
-            name,
-            surname,
-            email,
+            username, name, surname, email,
             password: hashedPassword,
-            kimlikNo,
-            cv :cvPath,
-            biography,
-            phoneNumber,
-            profilePhoto: profilePath ,
-            userType
+            kimlikNo, cv: cvPath, biography, phoneNumber,
+            profilePhoto: profilePath, userType
         });
-
+        console.log("--- 10. Yeni kullanıcı oluşturuldu ---");
 
         const token = jwt.sign(
-            {id:newUser.id, username:newUser.username, email:newUser.email, userType:newUser.userType},
+            { id: newUser.id, username: newUser.username, email: newUser.email, userType: newUser.userType },
             process.env.JWT_SECRET,
-            {expiresIn:'1h'}
+            { expiresIn: '1h' }
         );
+        console.log("--- 11. Token oluşturuldu ---");
 
-        res.status(201).json({
-            message: 'User registered successfully',
-            token,
-            user: {
-                id: newUser.id,
-                username: newUser.username,
-                name: newUser.name,
-                surname: newUser.surname,
-                email: newUser.email,
-                phoneNumber: newUser.phoneNumber,
-                profilePhoto: newUser.profilePhoto,
-                userType: newUser.userType
-            }
+        // userController a gidecek
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+
+        newUser.emailVerificationToken = crypto
+            .createHash('sha256')
+            .update(verificationToken)
+            .digest('hex');
+
+        await newUser.save();
+
+        const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+
+        const message = `
+            <p>Merhaba ${newUser.name || ''},</p>
+            <p>Hesabınızı doğrulamak için lütfen aşağıdaki linke tıklayın:</p>
+            <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+            <p>Eğer bu isteği siz yapmadıysanız, bu e-postayı görmezden gelebilirsiniz.</p>
+        `;
+
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT),
+            secure: process.env.SMTP_SECURE === 'true',
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
         });
 
+        await transporter.sendMail({
+            to: newUser.email,
+            subject: 'Hesabınızı Doğrulayın !!',
+            html: message
+        });
+
+        console.log("--- 13. Cevap gönderiliyor... ---");
+        res.status(201).json({
+            message: 'Kayıt başarılı!',
+            token,
+            user: { id: newUser.id, username: newUser.username, email: newUser.email }
+        });
+        console.log("--- 14. Cevap başarıyla gönderildi ---");
 
     } catch (err) {
-        console.error('Register Error:', err);
-        res.status(500).json({message:'server error !!', error: err.message});
+        console.error('!!! CATCH BLOĞUNA DÜŞTÜ !!!:', err);
+        res.status(500).json({ message: 'server error !!', error: err.message });
     }
 };
 
@@ -141,16 +172,14 @@ export const updateUser = async (req, res) => {
         const { id } = req.params;
         const { password, email, phoneNumber, cv, biography, profilePhoto, userType } = req.files;
 
-
         const findUser = await User.findByPk(id);
         if (!findUser) {
             return res.status(404).json({ message: 'Kullanıcı bulunamadı!!' });
         }
 
-
         let hashedPassword = findUser.password;
         if (password) {
-            const samePassword = await bcrypt.compare(password, findUser.password);
+            const samePassword = await bcrypt.compare(password, hashedPassword);
             if (samePassword) {
                 return res.status(400).json({ message: 'Yeni şifre eskiyle aynı olamaz!' });
             }
@@ -160,7 +189,6 @@ export const updateUser = async (req, res) => {
         if (req.files?.cv) {
             updateUser.cv = req.files.profilePhoto[0].path;
         }
-
 
         await User.update(
             {
@@ -174,7 +202,6 @@ export const updateUser = async (req, res) => {
             },
             { where: { id } }
         );
-
 
         const updatedUser = await User.findByPk(id, {
             attributes: { exclude: ['password'] }
@@ -279,24 +306,29 @@ export const resetPassword = async (req,res) => {
     }
 }
 
+export const verifyEmail = async (req,res)=> {
+    try {
+        const {token} = req.params;
 
+        const hashedToken = crypto.createHash('sha256').update(token).digest("hex");
+        const user = await User.findOne({
+            where: {
+                emailVerificationToken: hashedToken
+            }
+        });
 
+        if (!user) {
+            return res.status(400).json({message:'Geçersiz doğrulama linki.'})
+        }
 
+        user.isVerified = true;
+        user.emailVerificationToken = null;
+        await user.save()
 
+        res.status(200).json({message:'E-posta başarıyla doğrulandı.'})
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    } catch (err) {
+        console.error('Email verification hatası: ', err);
+        res.status(500).json({message:'Sunucu hatası !!'})
+    }
+}
