@@ -12,6 +12,8 @@ dotenv.config();
 export const registerUser = async (req, res) => {
     try {
         console.log("--- 1. Register isteği başladı ---");
+        // biography, userType userControllerde ayrı yapılandırılacak !!
+        //amaç: Register olurken biography ve userType seçimi saçma ve gereksiz oldu.
         const { username, name, surname, email, password, rePassword, kimlikNo, biography, phoneNumber, userType } = req.body;
 
         if (password !== rePassword) {
@@ -40,8 +42,12 @@ export const registerUser = async (req, res) => {
 
         const cvFile = req.files?.cv?.[0];
         const profileFile = req.files?.profilePhoto?.[0];
-        const cvPath = cvFile ? cvFile.path : null;
-        const profilePath = profileFile ? profileFile.path : null;
+        const cvFileName = cvFile ? cvFile.filename : null;
+        const profilePhotoFileName = profileFile ? profileFile.filename : null;
+
+        const cvPath = cvFileName ? '/uploads/' + cvFileName : undefined;
+        const profilePath = profilePhotoFileName ? '/uploads/' + profilePhotoFileName : undefined;
+
         console.log("--- 8. Dosya yolları alındı ---");
 
         console.log("--- 9. Yeni kullanıcı oluşturuluyor... ---");
@@ -60,8 +66,8 @@ export const registerUser = async (req, res) => {
         );
         console.log("--- 11. Token oluşturuldu ---");
 
-        // userController a gidecek
-
+// userController a gidecek-------------------------------------------------------------------------------
+// amaç:kullanıcı giriş yaptıktan sonra opsiyonel olarak doğrulama yapacak (ŞÜPHELİ)
         const verificationToken = crypto.randomBytes(32).toString('hex');
 
         newUser.emailVerificationToken = crypto
@@ -95,7 +101,7 @@ export const registerUser = async (req, res) => {
             subject: 'Hesabınızı Doğrulayın !!',
             html: message
         });
-
+//--------------------------------------------------------------------------------------------------------
         console.log("--- 13. Cevap gönderiliyor... ---");
         res.status(201).json({
             message: 'Kayıt başarılı!',
@@ -119,9 +125,11 @@ export const loginUser = async (req,res) => {
                 [Op.or]: [
                     { email:emailOrUsername},
                     { username:emailOrUsername},
+                    { password:password}
                 ]
             }
         });
+        console.log('Kullanıcı bulundu !!')
 
         if (!user) {
             return res.status(404).json({message:'User not found !!'})
@@ -140,9 +148,9 @@ export const loginUser = async (req,res) => {
                 email:user.email,
                 userType:user.userType
             },
-            process.env.JWT_SECRET,
-            {expiresIn: '1h'}
+            process.env.JWT_SECRET
         );
+        console.log('Token oluşturuldu !!')
 
         res.status(200).json({
             message: 'Login successful',
@@ -159,7 +167,7 @@ export const loginUser = async (req,res) => {
             }
         });
 
-
+        console.log('Login işlemi başarılı !!')
 
     } catch (err) {
         console.error('Login Error:', err);
@@ -170,55 +178,67 @@ export const loginUser = async (req,res) => {
 export const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { password, email, phoneNumber, cv, biography, profilePhoto, userType } = req.files;
+        const { password, email, phoneNumber, biography, userType } = req.body;
+
+        const cvFileObject = req.files?.cv?.[0];
+        const profilePhotoObject = req.files?.profilePhoto?.[0];
+        const cvFileName = cvFileObject ? cvFileObject.filename : undefined;
+        const profilePhotoFileName = profilePhotoObject ? profilePhotoObject.filename : undefined;
+
+        const cvPath = cvFileName ? '/uploads/' + cvFileName : undefined;
+        const profilePhotoPath = profilePhotoFileName ? '/uploads/' + profilePhotoFileName : undefined;
 
         const findUser = await User.findByPk(id);
         if (!findUser) {
+            console.log("--- [updateUser] HATA: Kullanıcı bulunamadı ---");
             return res.status(404).json({ message: 'Kullanıcı bulunamadı!!' });
         }
 
-        let hashedPassword = findUser.password;
+        const updateData = {};
+        if (email !== undefined) { updateData.email = email; }
+        if (phoneNumber !== undefined) { updateData.phoneNumber = phoneNumber; }
+        if (biography !== undefined) { updateData.biography = biography; }
+        if (userType !== undefined) { updateData.userType = userType; }
+        if (cvPath !== undefined) { updateData.cv = cvPath; }
+        if (profilePhotoPath !== undefined) { updateData.profilePhoto = profilePhotoPath; }
+
         if (password) {
-            const samePassword = await bcrypt.compare(password, hashedPassword);
+            const samePassword = await bcrypt.compare(password, findUser.password);
             if (samePassword) {
                 return res.status(400).json({ message: 'Yeni şifre eskiyle aynı olamaz!' });
             }
-            hashedPassword = await bcrypt.hash(password, 10);
+            updateData.password = await bcrypt.hash(password, 10);
+        } else {
+            console.log("--- [updateUser] ADIM 5: Yeni şifre gelmedi ---");
         }
-
-        if (req.files?.cv) {
-            updateUser.cv = req.files.profilePhoto[0].path;
-        }
-
-        await User.update(
-            {
-                password: hashedPassword,
-                email,
-                phoneNumber,
-                cv,
-                biography,
-                profilePhoto,
-                userType
-            },
+        const [numberOfAffectedRows] = await User.update(
+            updateData,
             { where: { id } }
         );
 
-        const updatedUser = await User.findByPk(id, {
-            attributes: { exclude: ['password'] }
-        });
+        if (numberOfAffectedRows > 0 || Object.keys(updateData).length === 0) {
+            const updatedUser = await User.findByPk(id, {
+                attributes: { exclude: ['password'] }
+            });
 
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'Güncellenen kullanıcı bulunamadı.' });
+            if (!updatedUser) {
+                return res.status(404).json({ message: 'Güncellenen kullanıcı bulunamadı.' });
+            }
+            res.status(200).json({
+                message: 'Kullanıcı başarıyla güncellendi.',
+                user: updatedUser
+            });
+
+        } else {
+            res.status(200).json({
+                message: 'Veri gönderildi ancak veritabanında değişiklik olmadı (muhtemelen aynı veri).',
+                user: findUser
+            });
         }
 
-        res.status(200).json({
-            message: 'Kullanıcı başarıyla güncellendi.',
-            user: updatedUser
-        });
-
     } catch (err) {
-        console.error('Update Error:', err);
-        res.status(500).json({ message: 'Server error!!' });
+        console.error('!!! [updateUser] CATCH BLOĞUNA DÜŞTÜ !!!:', err);
+        res.status(500).json({ message: 'Server error!!', error: err.message });
     }
 };
 
@@ -239,11 +259,10 @@ export const forgotPassword = async (req,res) => {
             auth: {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASS,
-            },
-            tls: { rejectUnauthorized: false }
+            }
         });
 
-        await user.save();
+        // await user.save();
 
         const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${token}`;
 
@@ -278,28 +297,41 @@ export const resetPassword = async (req,res) => {
         if (!password || !rePassword) {return res.status(400).json({message:'Password veya rePassword yok !!'});}
         if (password !== rePassword) {return res.status(400).json({message:'Password ve rePassword eşleşmiyor !!'});}
 
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-
-        const user = await User.findOne({
-            where: {
-                resetPasswordToken: hashedToken,
-                resetPasswordExpires: { [Op.gt]: new Date() }
+        const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT),
+            secure: false,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
             }
-        })
+        });
 
-        if (!user) {return res.status(400).json({message:'Expires geçersiz veya süresi dolmuş.'})}
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(400).json({message:'Token geçersiz veya süresi dolmuş.'});
+        }
+
+        const user = await User.findByPk(decoded.id);
+
+        if (!user) {
+            return res.status(400).json({message:'Token ile ilişkili kullanıcı bulunamadı.'});
+        }
 
         user.password = await bcrypt.hash(password, 10);
         user.resetPasswordToken = null;
         user.resetPasswordExpires = null;
         await user.save()
 
-        await sendMail({
+
+        await transporter.sendMail({
             to: user.email,
             subject: 'Şifre değişti',
             text: 'Şifreniz başarıyla değiştirildi.Eğer bunu siz yapmadıysanız lütfen destek ile iletişime geçiniz.'
         });
-
+        return res.status(200).json({ message: 'Şifreniz başarıyla değiştirildi.' });
     } catch (err) {
         console.error('Reset password error: '+err)
         res.status(500).json({message:'Server error !!'})

@@ -1,7 +1,6 @@
 import multer, { diskStorage } from 'multer';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 
 const uploadDir = path.resolve('uploads');
 console.log('1[upload.js] Yüklenecek hedef klasör:', uploadDir);

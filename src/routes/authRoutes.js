@@ -12,9 +12,9 @@ const router = express.Router();
 
 router.post('/register',mainUpload.fields([{name:'cv',maxCount:1}, {name:'profilePhoto',maxCount:1}]),registerUser,registerRules,validateRulesCheck);
 router.get('/admin',protect,authorize('admin',(req,res)=>{res.status(200).json({message:'Tebrikler admin olarak giriş yaptınız.'})}))
-router.post('/login',loginRules,validateRulesCheck,loginUser);
+router.post('/login',loginUser,loginRules,validateRulesCheck);
 router.post('/update',mainUpload.fields([{name:'cv',maxCount:1}, {name:'profilePhoto',maxCount:1}]),updateUser);
-router.put('/update/:id', updateUser);
+router.put('/update/:id',mainUpload.fields([{name:'cv',maxCount:1}, {name:'profilePhoto',maxCount:1}]), updateUser);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password/:token', resetPassword);
 router.get('/verify-email/:token',verifyEmail);
