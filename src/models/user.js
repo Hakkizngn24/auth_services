@@ -78,6 +78,10 @@ const User = sequelize.define('User', {
     emailVerificationToken: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    refreshToken: {
+        type: DataTypes.STRING,
+        allowNull: true
     }
 }, {
 

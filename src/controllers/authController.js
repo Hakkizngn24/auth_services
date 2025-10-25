@@ -11,104 +11,42 @@ dotenv.config();
 
 export const registerUser = async (req, res) => {
     try {
-        console.log("--- 1. Register isteği başladı ---");
-        // biography, userType userControllerde ayrı yapılandırılacak !!
-        //amaç: Register olurken biography ve userType seçimi saçma ve gereksiz oldu.
-        const { username, name, surname, email, password, rePassword, kimlikNo, biography, phoneNumber, userType } = req.body;
+        const { username, name, surname, email, password, rePassword, kimlikNo, phoneNumber } = req.body;
 
         if (password !== rePassword) {
-            console.log("HATA: Şifreler eşleşmedi.");
             return res.status(400).json({ message: 'Password do not match !!' });
         }
-        console.log("--- 2. Şifreler eşleşti ---");
 
-        console.log("--- 3. Kullanıcı aranıyor (await User.findOne)... ---");
         const checkUser = await User.findOne({
             where: {
                 [Op.or]: [{ email }, { username }, { phoneNumber }, { kimlikNo }]
             }
         });
-        console.log("--- 4. Kullanıcı arandı ---");
 
         if (checkUser) {
-            console.log("HATA: Kullanıcı zaten mevcut.");
             return res.status(400).json({ message: 'User with email, username, phone number, or kimlikNo already exists' });
         }
-        console.log("--- 5. Kullanıcı yeni, devam ediliyor ---");
 
-        console.log("--- 6. Şifre hash'leniyor... ---");
         const hashedPassword = await bcrypt.hash(password, 10);
-        console.log("--- 7. Şifre hash'lendi ---");
 
-        const cvFile = req.files?.cv?.[0];
-        const profileFile = req.files?.profilePhoto?.[0];
-        const cvFileName = cvFile ? cvFile.filename : null;
-        const profilePhotoFileName = profileFile ? profileFile.filename : null;
 
-        const cvPath = cvFileName ? '/uploads/' + cvFileName : undefined;
-        const profilePath = profilePhotoFileName ? '/uploads/' + profilePhotoFileName : undefined;
 
-        console.log("--- 8. Dosya yolları alındı ---");
-
-        console.log("--- 9. Yeni kullanıcı oluşturuluyor... ---");
         const newUser = await User.create({
             username, name, surname, email,
             password: hashedPassword,
-            kimlikNo, cv: cvPath, biography, phoneNumber,
-            profilePhoto: profilePath, userType
+            kimlikNo, phoneNumber
         });
-        console.log("--- 10. Yeni kullanıcı oluşturuldu ---");
 
-        const token = jwt.sign(
+        const accessToken = jwt.sign(
             { id: newUser.id, username: newUser.username, email: newUser.email, userType: newUser.userType },
             process.env.JWT_SECRET,
-            { expiresIn: '1h' }
         );
-        console.log("--- 11. Token oluşturuldu ---");
 
-// userController a gidecek-------------------------------------------------------------------------------
-// amaç:kullanıcı giriş yaptıktan sonra opsiyonel olarak doğrulama yapacak (ŞÜPHELİ)
-        const verificationToken = crypto.randomBytes(32).toString('hex');
-
-        newUser.emailVerificationToken = crypto
-            .createHash('sha256')
-            .update(verificationToken)
-            .digest('hex');
-
-        await newUser.save();
-
-        const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
-
-        const message = `
-            <p>Merhaba ${newUser.name || ''},</p>
-            <p>Hesabınızı doğrulamak için lütfen aşağıdaki linke tıklayın:</p>
-            <p><a href="${verificationUrl}">${verificationUrl}</a></p>
-            <p>Eğer bu isteği siz yapmadıysanız, bu e-postayı görmezden gelebilirsiniz.</p>
-        `;
-
-        const transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST,
-            port: Number(process.env.SMTP_PORT),
-            secure: process.env.SMTP_SECURE === 'true',
-            auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-            },
-        });
-
-        await transporter.sendMail({
-            to: newUser.email,
-            subject: 'Hesabınızı Doğrulayın !!',
-            html: message
-        });
-//--------------------------------------------------------------------------------------------------------
-        console.log("--- 13. Cevap gönderiliyor... ---");
         res.status(201).json({
             message: 'Kayıt başarılı!',
-            token,
+            accessToken,
             user: { id: newUser.id, username: newUser.username, email: newUser.email }
         });
-        console.log("--- 14. Cevap başarıyla gönderildi ---");
 
     } catch (err) {
         console.error('!!! CATCH BLOĞUNA DÜŞTÜ !!!:', err);
@@ -141,20 +79,35 @@ export const loginUser = async (req,res) => {
             return res.status(404).json({message:'Invalid password !!'})
         }
 
-        const token = jwt.sign(
+        const accessToken = jwt.sign( // accessToken (Kısa ömürlü olan)
             {
                 id:user.id,
                 username:user.username,
                 email:user.email,
                 userType:user.userType
             },
-            process.env.JWT_SECRET
+            process.env.JWT_SECRET,
+            {expiresIn: '5h'} // Değiştirilecek frontent yazılırken 15m yapılacak (Güvenlik için)
         );
         console.log('Token oluşturuldu !!')
 
+        const refreshToken = jwt.sign(
+            {id:user.id},
+            process.env.JWT_REFRESH_SECRET,
+            {expiresIn: '7d'}
+        )
+        const hashedRefreshToken = crypto
+            .createHash('sha256')
+            .update(refreshToken)
+            .digest('hex');
+
+        user.refreshToken = hashedRefreshToken;
+        await user.save()
+
         res.status(200).json({
             message: 'Login successful',
-            token,
+            accessToken,
+            refreshToken,
             user: {
                 id: user.id,
                 username: user.username,
@@ -338,7 +291,7 @@ export const resetPassword = async (req,res) => {
     }
 }
 
-export const verifyEmail = async (req,res)=> {
+export const verifyPasswordEmail = async (req,res)=> {
     try {
         const {token} = req.params;
 
@@ -364,3 +317,72 @@ export const verifyEmail = async (req,res)=> {
         res.status(500).json({message:'Sunucu hatası !!'})
     }
 }
+
+export const refreshToken = async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+        return res.status(401).json({ message: 'Refresh token bulunamadı.' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex'); // DB kontrolü için hash hala gerekli
+        const user = await User.findOne({ where: { id: decoded.id, refreshToken: hashedToken } }); // ID ve hash ile eşleştir
+
+        if (!user) {
+            return res.status(403).json({ message: 'Geçersiz veya iptal edilmiş Refresh Token.' });
+        }
+
+        const newAccessToken = jwt.sign(
+            { id: user.id, username: user.username, email: user.email, userType: user.userType },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+        );
+
+        res.status(200).json({ accessToken: newAccessToken });
+
+    } catch (err) {
+        console.error('Refresh Token Error:', err)
+        res.status(500).json({ message: 'Server error !!', error: err.message });
+    }
+};
+
+export const logoutUser = async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+        return res.status(400).json({ message: 'Refresh token gerekli.' });
+    }
+
+    try {
+        const hashedToken = crypto
+            .createHash('sha256')
+            .update(token)
+            .digest('hex');
+
+        const user = await User.findOne({ where: { refreshToken: hashedToken } });
+
+        if (user) {
+            user.refreshToken = null;
+        }
+            await user.save();
+
+        res.status(200).json({ message: 'Logout successful' });
+
+    } catch (err) {
+        console.error('Logout Error:', err);
+        res.status(500).json({ message: 'Server error !!', error: err.message });
+    }
+};
+
+
+
+
+
+
+
+
+
+
